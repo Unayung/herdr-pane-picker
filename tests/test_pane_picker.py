@@ -70,6 +70,13 @@ class PaneLayoutTests(unittest.TestCase):
             {"viewport_col": 36, "viewport_row": 13, "grid_cols": 8, "grid_rows": 4},
         )
 
+    def test_centers_shrunken_grid_box(self):
+        placement = pane_picker.badge_placement({"width": 81, "height": 31}, 6, 3)
+        self.assertEqual(
+            placement,
+            {"viewport_col": 37, "viewport_row": 14, "grid_cols": 6, "grid_rows": 3},
+        )
+
 
 class BadgeRenderingTests(unittest.TestCase):
     def test_prebuilt_badge_avoids_runtime_pillow_rendering(self):
@@ -90,7 +97,9 @@ class BadgeRenderingTests(unittest.TestCase):
         self.assertEqual(rgba[center + 3], 255)
 
     def test_graphics_payload_uses_compact_png_when_available(self):
-        payload = pane_picker.graphics_params("s", pane("p2", 0, 0), 8, 16)
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(pane_picker, "BADGE_CACHE_DIR", Path(directory)):
+                payload = pane_picker.graphics_params("s", pane("p2", 0, 0), 8, 16)
 
         self.assertEqual(payload["pane_id"], "p2")
         self.assertIn(payload["format"], {"png", "rgba"})
@@ -99,6 +108,39 @@ class BadgeRenderingTests(unittest.TestCase):
             self.assertTrue(base64.b64decode(payload["data_base64"]).startswith(b"\x89PNG"))
         self.assertEqual(payload["placement"]["grid_cols"], 8)
         self.assertEqual(payload["placement"]["grid_rows"], 4)
+
+    def test_small_cells_shrink_badge_to_grid_box(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(pane_picker, "BADGE_CACHE_DIR", Path(directory)):
+                scaled = pane_picker.scaled_badge_payload("d", 10, 21)
+        if scaled is None:
+            self.skipTest("Pillow is required to scale badges")
+        grid_cols, grid_rows, width, height, payload = scaled
+        self.assertEqual((grid_cols, grid_rows), (8, 4))
+        self.assertEqual((width, height), (80, 84))
+        self.assertTrue(payload.startswith(b"\x89PNG"))
+
+    def test_large_cells_keep_native_badge_size(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(pane_picker, "BADGE_CACHE_DIR", Path(directory)):
+                scaled = pane_picker.scaled_badge_payload("d", 16, 32)
+        if scaled is None:
+            self.skipTest("Pillow is required to scale badges")
+        self.assertEqual(scaled[:4], (8, 4, 128, 128))
+
+    def test_scaled_badges_are_cached_per_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(pane_picker, "BADGE_CACHE_DIR", Path(directory)):
+                first = pane_picker.scaled_badge_payload("d", 10, 21)
+                if first is None:
+                    self.skipTest("Pillow is required to scale badges")
+                self.assertTrue((Path(directory) / "d-80x84.png").is_file())
+                with mock.patch.object(pane_picker, "load_badge_png") as load:
+                    with mock.patch.object(pane_picker, "render_badge_png") as render:
+                        second = pane_picker.scaled_badge_payload("d", 10, 21)
+                load.assert_not_called()
+                render.assert_not_called()
+        self.assertEqual(first, second)
 
     def test_cell_size_requires_client_restart_when_host_pixels_are_unavailable(self):
         def request(method, params):

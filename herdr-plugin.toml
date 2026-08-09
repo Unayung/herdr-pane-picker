@@ -3,7 +3,7 @@ name = "Pane Picker"
 version = "0.1.1"
 min_herdr_version = "0.7.4"
 description = "Focus a Herdr pane by typing its on-pane character hint"
-platforms = ["macos"]
+platforms = ["macos", "linux"]
 
 [[actions]]
 id = "open"

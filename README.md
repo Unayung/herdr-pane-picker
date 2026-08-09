@@ -15,7 +15,7 @@ layout ships in `scripts/` — see Documentation screenshots below.
 
 ## Requirements
 
-- macOS
+- macOS or Linux
 - Herdr 0.7.4 or newer
 - Python 3.9 or newer
 - A Kitty-graphics-compatible outer terminal

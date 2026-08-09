@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Linux support: the manifest now declares the `linux` platform, and badge
+  rebuilding falls back to common Linux system fonts (DejaVu, Liberation).
+
+### Fixed
+
+- Hint badges are resized to the client's reported cell geometry before being
+  sent, so terminals whose 8×4-cell hint box is smaller than the native 128 px
+  asset no longer show a badge cropped to its top-left corner. Resized badges
+  are cached per geometry under `~/.local/state/herdr-pane-picker/badges/`.
+
 ## [0.1.1] - 2026-07-18
 
 ### Changed

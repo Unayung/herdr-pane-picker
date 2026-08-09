@@ -30,8 +30,13 @@ REQUEST_IDS = itertools.count(1)
 SYSTEM_BADGE_FONTS = (
     "/System/Library/Fonts/SFNSRounded.ttf",
     "/System/Library/Fonts/Supplemental/Arial Rounded Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 )
 BADGE_ASSET_DIR = Path(__file__).resolve().parent / "assets" / "badges"
+BADGE_CACHE_DIR = Path.home() / ".local" / "state" / "herdr-pane-picker" / "badges"
 OVERLAY_STATE_PATH = Path.home() / ".local" / "state" / "herdr-pane-picker" / "selection.json"
 OVERLAY_TIMEOUT_SECONDS = 6.0
 
@@ -174,14 +179,18 @@ def graphics_cell_size(
     return cell_width, cell_height
 
 
-def badge_placement(rect: Mapping[str, Any]) -> Dict[str, int]:
+def badge_placement(
+    rect: Mapping[str, Any],
+    grid_cols: int = BADGE_GRID_COLS,
+    grid_rows: int = BADGE_GRID_ROWS,
+) -> Dict[str, int]:
     width = max(0, int(rect.get("width", 0)))
     height = max(0, int(rect.get("height", 0)))
     return {
-        "viewport_col": max(0, (width - BADGE_GRID_COLS) // 2),
-        "viewport_row": max(0, (height - BADGE_GRID_ROWS) // 2),
-        "grid_cols": min(BADGE_GRID_COLS, max(1, width)),
-        "grid_rows": min(BADGE_GRID_ROWS, max(1, height)),
+        "viewport_col": max(0, (width - grid_cols) // 2),
+        "viewport_row": max(0, (height - grid_rows) // 2),
+        "grid_cols": min(grid_cols, max(1, width)),
+        "grid_rows": min(grid_rows, max(1, height)),
     }
 
 
@@ -377,6 +386,11 @@ def build_badge_assets() -> int:
     """Pre-render every hint so opening the picker never initializes Pillow."""
 
     BADGE_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in BADGE_CACHE_DIR.glob("*.png"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
     for char in HINT_ALPHABET:
         payload = render_badge_png(char)
         if payload is None:
@@ -482,19 +496,89 @@ def render_badge_payload(
     return "rgba", width, height, rgba
 
 
+def scaled_badge_payload(
+    char: str, cell_width: int, cell_height: int
+) -> Optional[Tuple[int, int, int, int, bytes]]:
+    """Fit the badge inside the hint grid box for this client's cell geometry.
+
+    Herdr never renders a graphics layer below its native pixel size (the
+    placement pixel size is pinned to max(image, grid box)), so on cell
+    geometries where the 8x4-cell hint box is smaller than the 128 px asset
+    the badge is cropped to its top-left corner. Returns (grid_cols,
+    grid_rows, width, height, png) with the image resized so its pixels
+    exactly match the emitted grid box, or None when Pillow is unavailable.
+    Scaled badges are cached per cell geometry so the picker path only pays
+    the Pillow import once per geometry.
+    """
+
+    if cell_width <= 0 or cell_height <= 0:
+        return None
+    side = min(
+        BADGE_GRID_COLS * cell_width,
+        BADGE_GRID_ROWS * cell_height,
+        BADGE_IMAGE_SIZE,
+    )
+    if side <= 0:
+        return None
+    grid_cols = max(1, -(-side // cell_width))
+    grid_rows = max(1, -(-side // cell_height))
+    width = grid_cols * cell_width
+    height = grid_rows * cell_height
+    cache_path = BADGE_CACHE_DIR / f"{char.lower()}-{width}x{height}.png"
+    try:
+        payload = cache_path.read_bytes()
+        if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+            return grid_cols, grid_rows, width, height, payload
+    except OSError:
+        pass
+    base = load_badge_png(char)
+    if base is None:
+        base = render_badge_png(char)
+    if base is None:
+        return None
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        resampling = getattr(Image, "Resampling", Image).LANCZOS
+        with Image.open(io.BytesIO(base)) as loaded:
+            badge = loaded.convert("RGBA").resize((side, side), resampling)
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        canvas.paste(badge, ((width - side) // 2, (height - side) // 2))
+        output = io.BytesIO()
+        canvas.save(output, format="PNG")
+    except (OSError, ValueError):
+        return None
+    payload = output.getvalue()
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(payload)
+    except OSError:
+        pass
+    return grid_cols, grid_rows, width, height, payload
+
+
 def graphics_params(
     char: str, pane: Mapping[str, Any], cell_width: int, cell_height: int
 ) -> Dict[str, Any]:
-    image_format, image_width, image_height, image = render_badge_payload(
-        char, cell_width, cell_height
-    )
+    scaled = scaled_badge_payload(char, cell_width, cell_height)
+    if scaled is not None:
+        grid_cols, grid_rows, image_width, image_height, image = scaled
+        image_format = "png"
+        placement = badge_placement(pane.get("rect", {}), grid_cols, grid_rows)
+    else:
+        image_format, image_width, image_height, image = render_badge_payload(
+            char, cell_width, cell_height
+        )
+        placement = badge_placement(pane.get("rect", {}))
     return {
         "pane_id": str(pane["pane_id"]),
         "format": image_format,
         "image_width": image_width,
         "image_height": image_height,
         "data_base64": base64.b64encode(image).decode("ascii"),
-        "placement": badge_placement(pane.get("rect", {})),
+        "placement": placement,
     }
 
 
