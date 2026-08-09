@@ -58,6 +58,15 @@ function module.apply_to_config(config, options)
       mods = "NONE",
       action = choice_action(python, helper, hint),
     })
+    -- An uppercase choice asks the helper to zoom. ponytail: bind both the
+    -- shifted glyph and the base key, WezTerm reports either one.
+    for _, shifted in ipairs({ hint:upper(), hint }) do
+      table.insert(config.key_tables[table_name], {
+        key = shifted,
+        mods = "SHIFT",
+        action = choice_action(python, helper, hint:upper()),
+      })
+    end
   end
   table.insert(config.key_tables[table_name], {
     key = "Escape",

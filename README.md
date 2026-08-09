@@ -36,16 +36,16 @@ kitty_graphics = true
 ```
 
 Do not add a second `[experimental]` table if one already exists. Install this
-fork's branch:
+fork:
 
 ```sh
-herdr plugin install Unayung/herdr-pane-picker --ref feat/focus-then-zoom
+herdr plugin install Unayung/herdr-pane-picker
 ```
 
-This branch adds Shift-modified hints (focus and zoom) on top of upstream
-`v0.1.1`. The plugin id stays `ugurtarlig.pane-picker`, so it replaces an
-existing install and every action, keybinding, and uninstall command below is
-unchanged. To go back to the reviewed upstream release:
+This fork adds Shift-modified hints (focus and zoom) and Linux support on top
+of upstream `v0.1.1`. The plugin id stays `ugurtarlig.pane-picker`, so it
+replaces an existing install and every action, keybinding, and uninstall
+command below is unchanged. To go back to the reviewed upstream release:
 
 ```sh
 herdr plugin install ugurtarlig/herdr-pane-picker --ref v0.1.1
@@ -63,7 +63,8 @@ herdr plugin action invoke ugurtarlig.pane-picker.open
 ```
 
 This opens a small session-modal prompt, draws the hints over the existing
-panes, and captures the selection inside Herdr. Bind it in
+panes, and captures the selection inside Herdr. Type a hint to focus that pane,
+or hold Shift while typing it to focus and zoom. Bind it in
 `~/.config/herdr/config.toml`:
 
 ```toml
@@ -100,7 +101,7 @@ Then load this repository as a WezTerm plugin near the end of your
 
 ```lua
 local pane_picker = wezterm.plugin.require(
-  "https://github.com/ugurtarlig/herdr-pane-picker"
+  "https://github.com/Unayung/herdr-pane-picker"
 )
 
 pane_picker.apply_to_config(config, {
@@ -118,6 +119,10 @@ contain `herdr`. Outside Herdr, the integration keeps WezTerm's native
 `PaneSelect` behavior. Inside Herdr it forwards the enhanced key sequence,
 activates the one-shot `a/s/d/f` table, and runs the plugin's selection helper.
 
+Point `plugin.require` at this fork, not at upstream: the one-shot table has to
+carry the Shift-modified hints as well, otherwise Shift+letter is swallowed and
+only plain focus works.
+
 WezTerm caches Git plugins. After upgrading this plugin, run
 `wezterm.plugin.update_all()` from WezTerm's debug overlay to update the outer
 integration as well.
@@ -125,9 +130,12 @@ integration as well.
 ## Controls
 
 - Type the visible letter to focus that pane.
-- Type the letter with Shift held to focus and zoom that pane.
+- Type the letter with Shift held to focus **and** zoom that pane.
 - Press Escape or Ctrl-G to cancel.
 - Hints clear automatically after six seconds.
+
+Both work in the portable picker and in the WezTerm integration. Zoom is only
+turned on, never toggled off, so leave zoom with Herdr's own zoom binding.
 
 ## How it works
 
@@ -148,7 +156,7 @@ touching pane content. Errors are appended to
 ## Local development
 
 ```sh
-git clone -b feat/focus-then-zoom https://github.com/Unayung/herdr-pane-picker.git
+git clone https://github.com/Unayung/herdr-pane-picker.git
 cd herdr-pane-picker
 ./activate-local.sh
 python3 -m unittest discover -s tests -v

@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Shift-modified hints: typing a hint with Shift held focuses the pane and
+  zooms it. The WezTerm one-shot key table now carries the shifted hints too,
+  so the popup-free path zooms as well.
 - Linux support: the manifest now declares the `linux` platform, and badge
   rebuilding falls back to common Linux system fonts (DejaVu, Liberation).
 
