@@ -35,8 +35,17 @@ Enable graphics in the existing `[experimental]` section of
 kitty_graphics = true
 ```
 
-Do not add a second `[experimental]` table if one already exists. Install the
-reviewed release:
+Do not add a second `[experimental]` table if one already exists. Install this
+fork's branch:
+
+```sh
+herdr plugin install Unayung/herdr-pane-picker --ref feat/focus-then-zoom
+```
+
+This branch adds Shift-modified hints (focus and zoom) on top of upstream
+`v0.1.1`. The plugin id stays `ugurtarlig.pane-picker`, so it replaces an
+existing install and every action, keybinding, and uninstall command below is
+unchanged. To go back to the reviewed upstream release:
 
 ```sh
 herdr plugin install ugurtarlig/herdr-pane-picker --ref v0.1.1
@@ -116,6 +125,7 @@ integration as well.
 ## Controls
 
 - Type the visible letter to focus that pane.
+- Type the letter with Shift held to focus and zoom that pane.
 - Press Escape or Ctrl-G to cancel.
 - Hints clear automatically after six seconds.
 
@@ -138,7 +148,7 @@ touching pane content. Errors are appended to
 ## Local development
 
 ```sh
-git clone https://github.com/ugurtarlig/herdr-pane-picker.git
+git clone -b feat/focus-then-zoom https://github.com/Unayung/herdr-pane-picker.git
 cd herdr-pane-picker
 ./activate-local.sh
 python3 -m unittest discover -s tests -v

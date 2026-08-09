@@ -544,7 +544,9 @@ def show_hints(
     return shown
 
 
-def read_selection(valid: Mapping[str, str]) -> Optional[str]:
+def read_selection(valid: Mapping[str, str]) -> Optional[Tuple[str, bool]]:
+    """Return (pane_id, zoom); an uppercase (shifted) hint requests zoom."""
+
     if not sys.stdin.isatty():
         return None
     descriptor = sys.stdin.fileno()
@@ -556,11 +558,11 @@ def read_selection(valid: Mapping[str, str]) -> Optional[str]:
             if not raw or raw in {b"\x03", b"\x07", b"\x1b"}:
                 return None
             try:
-                key = raw.decode("ascii").lower()
+                key = raw.decode("ascii")
             except UnicodeDecodeError:
                 continue
-            if key in valid:
-                return valid[key]
+            if key.lower() in valid:
+                return valid[key.lower()], key.isupper()
             sys.stdout.write("\a")
             sys.stdout.flush()
     finally:
@@ -569,7 +571,7 @@ def read_selection(valid: Mapping[str, str]) -> Optional[str]:
 
 def popup_header(keys: str) -> None:
     sys.stdout.write("\x1b[2J\x1b[H\x1b[?25l")
-    sys.stdout.write(f"\x1b[1mPane picker\x1b[0m  {keys}  ·  Esc/Ctrl-G cancels")
+    sys.stdout.write(f"\x1b[1mPane picker\x1b[0m  {keys}  ·  Shift zooms  ·  Esc/Ctrl-G cancels")
     sys.stdout.flush()
 
 
@@ -696,9 +698,11 @@ def choose_overlay(
 
     use_state_socket(state)
     targets = state.get("targets", {})
-    selected = targets.get(choice) if isinstance(targets, dict) and choice else None
+    selected = targets.get(choice.lower()) if isinstance(targets, dict) and choice else None
     if isinstance(selected, str):
         request("pane.focus", {"pane_id": selected})
+        if choice and choice.isupper():
+            request("pane.zoom", {"pane_id": selected, "mode": "on"})
     clear_overlay_state(state, request=request)
     token = state.get("token")
     if isinstance(token, str):
@@ -761,7 +765,10 @@ def pick_pane() -> int:
         restore_popup_cursor()
         clear_hints(shown)
     if selected:
-        api_request("pane.focus", {"pane_id": selected})
+        pane_id, zoom = selected
+        api_request("pane.focus", {"pane_id": pane_id})
+        if zoom:
+            api_request("pane.zoom", {"pane_id": pane_id, "mode": "on"})
     return 0
 
 
@@ -794,7 +801,7 @@ def main(argv: Sequence[str]) -> int:
             print(f"pane-picker: {error}", file=sys.stderr)
             return 1
     if command in {"choose", "cancel"}:
-        choice = argv[2].lower() if command == "choose" and len(argv) > 2 else None
+        choice = argv[2] if command == "choose" and len(argv) > 2 else None
         try:
             return choose_overlay(choice)
         except (HerdrApiError, RuntimeError, OSError, ValueError) as error:

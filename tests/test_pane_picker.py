@@ -183,6 +183,32 @@ class OverlayPickerTests(unittest.TestCase):
             ],
         )
 
+    def test_uppercase_choice_focuses_then_zooms(self):
+        calls = []
+
+        def request(method, params):
+            calls.append((method, dict(params)))
+            return {"type": "ok"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "selection.json"
+            with mock.patch.object(pane_picker, "OVERLAY_STATE_PATH", state_path):
+                pane_picker.write_overlay_state(
+                    {
+                        "token": "test-token",
+                        "socket_path": "/test/herdr.sock",
+                        "expires_at": time.time() + 5,
+                        "targets": {"a": "p1", "s": "p2"},
+                        "pane_ids": ["p1", "p2"],
+                    }
+                )
+                with mock.patch.dict(os.environ, {}, clear=False):
+                    result = pane_picker.choose_overlay("S", wait_seconds=0.1, request=request)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(calls[0], ("pane.focus", {"pane_id": "p2"}))
+        self.assertEqual(calls[1], ("pane.zoom", {"pane_id": "p2", "mode": "on"}))
+
 
 class SocketClientTests(unittest.TestCase):
     def run_server(self, server_socket, response_factory):
