@@ -653,9 +653,12 @@ def read_selection(valid: Mapping[str, str]) -> Optional[Tuple[str, bool]]:
         termios.tcsetattr(descriptor, termios.TCSADRAIN, previous)
 
 
-def popup_header(keys: str) -> None:
+def popup_header(
+    keys: str, title: str = "Pane picker", modifier: str = "Shift zooms"
+) -> None:
     sys.stdout.write("\x1b[2J\x1b[H\x1b[?25l")
-    sys.stdout.write(f"\x1b[1mPane picker\x1b[0m  {keys}  ·  Shift zooms  ·  Esc/Ctrl-G cancels")
+    suffix = f"{modifier}  ·  " if modifier else ""
+    sys.stdout.write(f"\x1b[1m{title}\x1b[0m  {keys}  ·  {suffix}Esc/Ctrl-G cancels")
     sys.stdout.flush()
 
 
@@ -826,21 +829,32 @@ def log_error(message: str) -> None:
         pass
 
 
-def pick_pane() -> int:
+def pick_pane(swap: bool = False) -> int:
     result = api_request("pane.layout", {})
     layout = result.get("layout")
     if not isinstance(layout, dict):
         raise RuntimeError("Herdr did not return a pane layout")
     picker_pane = os.environ.get("HERDR_PANE_ID", "")
-    assignments = assign_hints(layout, excluded_pane_ids={picker_pane} if picker_pane else ())
-    if len(assignments) < 2:
+    excluded = {picker_pane} if picker_pane else set()
+    source = str(layout.get("focused_pane_id") or "")
+    if swap:
+        if not source:
+            raise RuntimeError("Herdr did not report a focused pane")
+        # Swapping a pane with itself is a no-op, so it never earns a hint.
+        excluded.add(source)
+    assignments = assign_hints(layout, excluded_pane_ids=excluded)
+    if len(assignments) < (1 if swap else 2):
         show_error("This tab only has one pane.")
         return 0
 
     targets = {char: str(pane["pane_id"]) for char, pane in assignments}
     shown: List[str] = []
-    selected: Optional[str] = None
-    popup_header("".join(targets))
+    selected: Optional[Tuple[str, bool]] = None
+    if swap:
+        # Shift only means zoom, which the swap flow has no use for.
+        popup_header("".join(targets), "Swap pane", "")
+    else:
+        popup_header("".join(targets))
     try:
         cell_width, cell_height = graphics_cell_size(str(assignments[0][1]["pane_id"]))
         shown = show_hints(assignments, cell_width, cell_height)
@@ -850,18 +864,23 @@ def pick_pane() -> int:
         clear_hints(shown)
     if selected:
         pane_id, zoom = selected
-        api_request("pane.focus", {"pane_id": pane_id})
-        if zoom:
-            api_request("pane.zoom", {"pane_id": pane_id, "mode": "on"})
+        if swap:
+            api_request(
+                "pane.swap", {"source_pane_id": source, "target_pane_id": pane_id}
+            )
+        else:
+            api_request("pane.focus", {"pane_id": pane_id})
+            if zoom:
+                api_request("pane.zoom", {"pane_id": pane_id, "mode": "on"})
     return 0
 
 
-def open_picker() -> int:
+def open_picker(entrypoint: str = "picker") -> int:
     api_request(
         "plugin.pane.open",
         {
             "plugin_id": PLUGIN_ID,
-            "entrypoint": "picker",
+            "entrypoint": entrypoint,
             "placement": "popup",
             "focus": True,
         },
@@ -892,16 +911,16 @@ def main(argv: Sequence[str]) -> int:
             log_error(str(error))
             print(f"pane-picker: {error}", file=sys.stderr)
             return 1
-    if command == "open":
+    if command in {"open", "open-swap"}:
         try:
-            return open_picker()
+            return open_picker("swapper" if command == "open-swap" else "picker")
         except (HerdrApiError, RuntimeError) as error:
             log_error(str(error))
             print(f"pane-picker: {error}", file=sys.stderr)
             return 1
-    if command == "pick":
+    if command in {"pick", "swap"}:
         try:
-            return pick_pane()
+            return pick_pane(swap=command == "swap")
         except HerdrApiError as error:
             log_error(f"{error.code}: {error.message}")
             if error.code == "feature_disabled":
@@ -914,7 +933,8 @@ def main(argv: Sequence[str]) -> int:
             show_error(str(error))
             return 1
     print(
-        f"usage: {Path(argv[0]).name} [build-assets|show|choose KEY|cancel|open|pick]",
+        f"usage: {Path(argv[0]).name} "
+        "[build-assets|show|choose KEY|cancel|open|pick|open-swap|swap]",
         file=sys.stderr,
     )
     return 2

@@ -17,6 +17,12 @@ title = "Show pane hints"
 contexts = ["workspace"]
 command = ["python3", "pane_picker.py", "show"]
 
+[[actions]]
+id = "swap"
+title = "Swap with a pane"
+contexts = ["workspace"]
+command = ["python3", "pane_picker.py", "open-swap"]
+
 [[panes]]
 id = "picker"
 title = "Pane picker"
@@ -24,3 +30,11 @@ placement = "popup"
 width = 52
 height = 4
 command = ["python3", "pane_picker.py", "pick"]
+
+[[panes]]
+id = "swapper"
+title = "Swap pane"
+placement = "popup"
+width = 52
+height = 4
+command = ["python3", "pane_picker.py", "swap"]

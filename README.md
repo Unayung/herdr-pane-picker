@@ -81,6 +81,24 @@ Reload the configuration:
 herdr server reload-config
 ```
 
+## Swapping panes
+
+`ugurtarlig.pane-picker.swap` reuses the same hints to rearrange a tab. It
+swaps the focused pane with the one you pick, which beats repeating
+`prefix+shift+h/j/k/l` once a tab holds more than a handful of panes. The
+focused pane gets no hint, because swapping it with itself does nothing.
+
+```toml
+[[keys.command]]
+key = "prefix+alt+s"
+type = "plugin_action"
+command = "ugurtarlig.pane-picker.swap"
+description = "swap with a pane by character hint"
+```
+
+Swaps stay inside the tab and keep pane ids, split ratios, and running
+processes where they are; only the two panes trade places.
+
 ## Popup-free WezTerm integration
 
 The fast path draws only the character badges. Herdr starts the overlay while
@@ -129,8 +147,10 @@ integration as well.
 
 ## Controls
 
-- Type the visible letter to focus that pane.
-- Type the letter with Shift held to focus **and** zoom that pane.
+- Type the visible letter to focus that pane, or to swap with it in the swap
+  action.
+- Type the letter with Shift held to focus **and** zoom that pane. The swap
+  action ignores Shift.
 - Press Escape or Ctrl-G to cancel.
 - Hints clear automatically after six seconds.
 

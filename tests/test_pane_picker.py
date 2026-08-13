@@ -336,6 +336,73 @@ class ActionTests(unittest.TestCase):
             ],
         )
 
+    def test_swap_action_launches_the_swapper_entrypoint(self):
+        calls = []
+
+        def request(method, params):
+            calls.append((method, dict(params)))
+            return {"type": "ok"}
+
+        with mock.patch.object(pane_picker, "api_request", side_effect=request):
+            result = pane_picker.open_picker("swapper")
+
+        self.assertEqual(result, 0)
+        self.assertEqual(calls[0][1]["entrypoint"], "swapper")
+
+
+class SwapTests(unittest.TestCase):
+    LAYOUT = {
+        "focused_pane_id": "w1:p2",
+        "panes": [pane("w1:p1", 0, 0), pane("w1:p2", 40, 0), pane("w1:p3", 0, 20)],
+    }
+
+    def run_swap(self, selection):
+        calls = []
+        offered = []
+
+        def request(method, params):
+            calls.append((method, dict(params)))
+            if method == "pane.layout":
+                return {"layout": self.LAYOUT}
+            return {"type": "ok"}
+
+        def show_hints(assignments, cell_width, cell_height):
+            offered.extend(str(target["pane_id"]) for _, target in assignments)
+            return list(offered)
+
+        with mock.patch.object(pane_picker, "api_request", side_effect=request), \
+            mock.patch.object(pane_picker, "graphics_cell_size", return_value=(10, 20)), \
+            mock.patch.object(pane_picker, "show_hints", side_effect=show_hints), \
+            mock.patch.object(pane_picker, "clear_hints"), \
+            mock.patch.object(pane_picker, "popup_header"), \
+            mock.patch.object(pane_picker, "restore_popup_cursor"), \
+            mock.patch.object(pane_picker, "read_selection", return_value=selection), \
+            mock.patch.dict(os.environ, {}, clear=True):
+            result = pane_picker.pick_pane(swap=True)
+
+        self.assertEqual(result, 0)
+        return calls, offered
+
+    def test_swaps_the_focused_pane_with_the_picked_one(self):
+        calls, offered = self.run_swap(("w1:p3", False))
+
+        self.assertEqual(
+            calls[-1],
+            ("pane.swap", {"source_pane_id": "w1:p2", "target_pane_id": "w1:p3"}),
+        )
+        # The focused pane never earns a hint; swapping it with itself is a no-op.
+        self.assertEqual(offered, ["w1:p1", "w1:p3"])
+
+    def test_shifted_hint_swaps_without_zooming(self):
+        calls, _ = self.run_swap(("w1:p3", True))
+
+        self.assertEqual([method for method, _ in calls], ["pane.layout", "pane.swap"])
+
+    def test_cancelled_selection_leaves_the_layout_alone(self):
+        calls, _ = self.run_swap(None)
+
+        self.assertEqual([method for method, _ in calls], ["pane.layout"])
+
 
 if __name__ == "__main__":
     unittest.main()

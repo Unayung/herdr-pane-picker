@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Swap action: `ugurtarlig.pane-picker.swap` draws the same hints and swaps the
+  focused pane with the one you pick, so panes can be rearranged by hint instead
+  of by repeated directional swaps. The focused pane gets no hint of its own,
+  and the swap flow ignores Shift.
 - Shift-modified hints: typing a hint with Shift held focuses the pane and
   zooms it. The WezTerm one-shot key table now carries the shifted hints too,
   so the popup-free path zooms as well.
