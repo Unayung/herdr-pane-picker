@@ -14,6 +14,7 @@ import sys
 import termios
 import time
 import tty
+import unicodedata
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
@@ -155,6 +156,102 @@ def assign_hints(
             f"this tab has {len(panes)} panes, but the picker supports {len(alphabet)}"
         )
     return list(zip(alphabet, panes))
+
+
+def _cell_width(char: str) -> int:
+    return 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+
+
+def _put_text(grid: List[List[str]], row: int, col: int, text: str, limit: int) -> None:
+    """Write text into grid cells, clipping at limit; wide chars take two cells."""
+
+    for char in text:
+        width = _cell_width(char)
+        if col + width > limit:
+            return
+        grid[row][col] = char
+        if width == 2:
+            grid[row][col + 1] = ""
+        col += width
+
+
+def _text_width(text: str) -> int:
+    return sum(_cell_width(char) for char in text)
+
+
+def render_minimap(
+    layout: Mapping[str, Any],
+    hints: Mapping[str, str],
+    names: Mapping[str, str],
+    cols: int,
+    rows: int,
+) -> List[str]:
+    """Draw the tab's panes scaled into a cols x rows box-drawing map.
+
+    hints maps pane_id -> hint char. Panes without a hint are drawn unlabeled
+    so the map still matches the real layout.
+    """
+
+    panes = spatial_panes(layout)
+    area = layout.get("area") or {}
+    area_x = int(area.get("x", 0))
+    area_y = int(area.get("y", 0))
+    area_w = int(area.get("width", 0)) or max(
+        (int(p["rect"]["x"]) + int(p["rect"]["width"]) for p in panes), default=1
+    )
+    area_h = int(area.get("height", 0)) or max(
+        (int(p["rect"]["y"]) + int(p["rect"]["height"]) for p in panes), default=1
+    )
+    grid = [[" "] * cols for _ in range(rows)]
+    for pane in panes:
+        rect = pane["rect"]
+        x0 = (int(rect["x"]) - area_x) * cols // area_w
+        y0 = (int(rect["y"]) - area_y) * rows // area_h
+        x1 = (int(rect["x"]) - area_x + int(rect["width"])) * cols // area_w - 1
+        y1 = (int(rect["y"]) - area_y + int(rect["height"])) * rows // area_h - 1
+        if x1 - x0 < 2 or y1 - y0 < 1:
+            continue
+        for x in range(x0 + 1, x1):
+            grid[y0][x] = grid[y1][x] = "─"
+        for y in range(y0 + 1, y1):
+            grid[y][x0] = grid[y][x1] = "│"
+        grid[y0][x0], grid[y0][x1], grid[y1][x0], grid[y1][x1] = "┌", "┐", "└", "┘"
+        inner = x1 - x0 - 1
+        middle = (y0 + y1) // 2
+        pane_id = str(pane.get("pane_id", ""))
+        hint = hints.get(pane_id)
+        if hint:
+            grid[middle][x0 + 1 + (inner - 1) // 2] = f"\x1b[1;7m{hint}\x1b[0m"
+        name = names.get(pane_id, "")
+        name_row = middle + 1 if hint else middle
+        if name and name_row < y1:
+            start = x0 + 1 + max(0, (inner - _text_width(name)) // 2)
+            _put_text(grid, name_row, start, name, x1)
+    return ["".join(row) for row in grid]
+
+
+def pane_names(request: Callable[[str, Mapping[str, Any]], Dict[str, Any]] = api_request) -> Dict[str, str]:
+    """Best-effort display names; the map still works without them."""
+
+    try:
+        panes = request("pane.list", {}).get("panes", [])
+    except (HerdrApiError, RuntimeError):
+        return {}
+    return {
+        str(pane.get("pane_id")): str(
+            pane.get("label") or pane.get("terminal_title_stripped") or pane.get("agent") or ""
+        )
+        for pane in panes
+        if isinstance(pane, dict)
+    }
+
+
+def draw_minimap(layout: Mapping[str, Any], hints: Mapping[str, str]) -> None:
+    size = os.get_terminal_size(sys.stdout.fileno())
+    # Row 0 holds the header written by popup_header.
+    lines = render_minimap(layout, hints, pane_names(), size.columns, max(size.lines - 1, 2))
+    sys.stdout.write("".join(f"\x1b[{row + 2};1H{line}" for row, line in enumerate(lines)))
+    sys.stdout.flush()
 
 
 def graphics_cell_size(
@@ -848,7 +945,6 @@ def pick_pane(swap: bool = False) -> int:
         return 0
 
     targets = {char: str(pane["pane_id"]) for char, pane in assignments}
-    shown: List[str] = []
     selected: Optional[Tuple[str, bool]] = None
     if swap:
         # Shift only means zoom, which the swap flow has no use for.
@@ -856,12 +952,12 @@ def pick_pane(swap: bool = False) -> int:
     else:
         popup_header("".join(targets))
     try:
-        cell_width, cell_height = graphics_cell_size(str(assignments[0][1]["pane_id"]))
-        shown = show_hints(assignments, cell_width, cell_height)
+        # Herdr 0.9.2 removed pane.graphics.*, so badges can no longer be drawn
+        # over other panes; the popup shows a scaled map of the tab instead.
+        draw_minimap(layout, {pane_id: char for char, pane_id in targets.items()})
         selected = read_selection(targets)
     finally:
         restore_popup_cursor()
-        clear_hints(shown)
     if selected:
         pane_id, zoom = selected
         if swap:

@@ -27,14 +27,14 @@ command = ["python3", "pane_picker.py", "open-swap"]
 id = "picker"
 title = "Pane picker"
 placement = "popup"
-width = 52
-height = 4
+width = "70%"
+height = "60%"
 command = ["python3", "pane_picker.py", "pick"]
 
 [[panes]]
 id = "swapper"
 title = "Swap pane"
 placement = "popup"
-width = 52
-height = 4
+width = "70%"
+height = "60%"
 command = ["python3", "pane_picker.py", "swap"]
