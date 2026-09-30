@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import tempfile
@@ -366,14 +367,11 @@ class SwapTests(unittest.TestCase):
                 return {"layout": self.LAYOUT}
             return {"type": "ok"}
 
-        def show_hints(assignments, cell_width, cell_height):
-            offered.extend(str(target["pane_id"]) for _, target in assignments)
-            return list(offered)
+        def draw_minimap(layout, hints):
+            offered.extend(hints)
 
         with mock.patch.object(pane_picker, "api_request", side_effect=request), \
-            mock.patch.object(pane_picker, "graphics_cell_size", return_value=(10, 20)), \
-            mock.patch.object(pane_picker, "show_hints", side_effect=show_hints), \
-            mock.patch.object(pane_picker, "clear_hints"), \
+            mock.patch.object(pane_picker, "draw_minimap", side_effect=draw_minimap), \
             mock.patch.object(pane_picker, "popup_header"), \
             mock.patch.object(pane_picker, "restore_popup_cursor"), \
             mock.patch.object(pane_picker, "read_selection", return_value=selection), \
@@ -402,6 +400,39 @@ class SwapTests(unittest.TestCase):
         calls, _ = self.run_swap(None)
 
         self.assertEqual([method for method, _ in calls], ["pane.layout"])
+
+
+class MinimapTests(unittest.TestCase):
+    LAYOUT = {
+        "area": {"x": 0, "y": 0, "width": 100, "height": 40},
+        "panes": [
+            pane("w1:p1", 0, 0, 50, 20),
+            pane("w1:p2", 50, 0, 50, 20),
+            pane("w1:p3", 0, 20, 50, 20),
+            pane("w1:p4", 50, 20, 50, 20),
+        ],
+    }
+
+    def test_draws_one_box_per_pane_in_layout_position(self):
+        hints = {"w1:p1": "a", "w1:p2": "s", "w1:p3": "d", "w1:p4": "f"}
+        lines = pane_picker.render_minimap(self.LAYOUT, hints, {}, 20, 8)
+
+        self.assertEqual(len(lines), 8)
+        self.assertEqual(lines[0], "┌────────┐┌────────┐")
+        self.assertEqual(lines[4], "┌────────┐┌────────┐")
+        self.assertIn("\x1b[1;7ma\x1b[0m", lines[1] + lines[2])
+        self.assertIn("\x1b[1;7mf\x1b[0m", lines[5] + lines[6])
+
+    def test_wide_names_keep_borders_aligned(self):
+        names = {"w1:p1": "壓測壓測壓測壓測壓測", "w1:p2": "ok"}
+        lines = pane_picker.render_minimap(self.LAYOUT, {"w1:p2": "s"}, names, 20, 8)
+
+        for line in lines:
+            visible = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            width = sum(pane_picker._cell_width(c) for c in visible)
+            self.assertEqual(width, 20, repr(line))
+        # Unhinted pane still shows its (clipped) name, without a hint letter.
+        self.assertIn("壓測", "".join(lines[:4]))
 
 
 if __name__ == "__main__":
